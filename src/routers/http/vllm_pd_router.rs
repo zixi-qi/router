@@ -1597,6 +1597,10 @@ impl RouterTrait for VllmPDRouter {
         self.pd_router.flush_cache().await
     }
 
+    async fn reset_prefix_cache(&self) -> Response {
+        self.pd_router.reset_prefix_cache().await
+    }
+
     async fn get_worker_loads(&self) -> Response {
         self.pd_router.get_worker_loads().await
     }
