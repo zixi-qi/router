@@ -753,9 +753,22 @@ impl RouterTrait for RouterManager {
 
     async fn reset_prefix_cache(&self) -> Response {
         if self.routers.is_empty() {
-            (StatusCode::SERVICE_UNAVAILABLE, "No routers configured").into_response()
+            return (StatusCode::SERVICE_UNAVAILABLE, "No routers configured").into_response();
+        }
+
+        let routers: Vec<_> = self.routers.iter().map(|r| Arc::clone(r.value())).collect();
+        let tasks: Vec<_> = routers.iter().map(|r| r.reset_prefix_cache()).collect();
+        let results = futures_util::future::join_all(tasks).await;
+
+        let all_success = results.iter().all(|r| r.status().is_success());
+        if all_success {
+            (StatusCode::OK, "Prefix cache reset on all routers").into_response()
         } else {
-            (StatusCode::OK, "Prefix cache reset requested").into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Prefix cache reset failed on one or more routers",
+            )
+                .into_response()
         }
     }
 

@@ -1591,33 +1591,21 @@ impl RouterTrait for Router {
     }
 
     async fn reset_prefix_cache(&self) -> Response {
-        // Get all worker URLs
-        let worker_urls = self.get_worker_urls();
-
-        // Send requests to all workers concurrently
-        let mut tasks = Vec::new();
-        for worker_url in &worker_urls {
-            let worker_url = if self.intra_node_data_parallel_size > 1 {
-                let (worker_url_prefix, _dp_rank) = match dp_utils::extract_dp_rank(worker_url) {
-                    Ok(tup) => tup,
-                    Err(e) => {
-                        error!("Failed to extract dp_rank: {}", e);
-                        return (
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            format!("Failed to extract dp_rank: {}", e),
-                        )
-                            .into_response();
-                    }
-                };
-                worker_url_prefix
-            } else {
-                worker_url
-            };
-            let request_builder = self
-                .client
-                .post(format!("{}/reset_prefix_cache", worker_url));
-            tasks.push(request_builder.send());
+        // Deduplicate base URLs to avoid redundant requests in DP mode
+        let mut unique_base_urls = std::collections::HashSet::new();
+        for url in self.get_worker_urls() {
+            unique_base_urls.insert(self.worker_base_url(&url));
         }
+
+        // Send requests to all unique workers concurrently
+        let tasks: Vec<_> = unique_base_urls
+            .iter()
+            .map(|base_url| {
+                self.client
+                    .post(format!("{}/reset_prefix_cache", base_url))
+                    .send()
+            })
+            .collect();
 
         let results = futures_util::future::join_all(tasks).await;
 
